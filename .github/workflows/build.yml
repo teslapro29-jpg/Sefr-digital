@@ -1,1 +1,57 @@
-
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.5
+      - name: Loyiha tuzish
+        run: |
+          PKG=$(grep -m1 '^package' MainActivity.java | sed -E 's/^package +([^; ]+).*/\1/' | tr -d '\r')
+          M=app/src/main
+          mkdir -p $M/assets $M/res/values $M/java/$(echo "$PKG" | tr . /)
+          cp AndroidManifest.xml $M/
+          cp index.html $M/assets/
+          cp MainActivity.java $M/java/$(echo "$PKG" | tr . /)/
+          sed -i -E 's/ package="[^"]*"//; s/ android:(icon|roundIcon|theme|allowBackup|fullBackupContent|dataExtractionRules)="[^"]*"//g' $M/AndroidManifest.xml
+          sed -i 's|<application|<application android:theme="@style/AppTheme"|' $M/AndroidManifest.xml
+          grep -q 'android:exported' $M/AndroidManifest.xml || sed -i 's|<activity|<activity android:exported="true"|' $M/AndroidManifest.xml
+          echo '<resources><style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar"/><string name="app_name">Sefr</string></resources>' > $M/res/values/styles.xml
+          echo 'android.useAndroidX=true' > gradle.properties
+          cat > settings.gradle <<EOF
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          include ':app'
+          EOF
+          cat > build.gradle <<EOF
+          plugins { id 'com.android.application' version '8.2.2' apply false }
+          EOF
+          cat > app/build.gradle <<EOF
+          plugins { id 'com.android.application' }
+          android {
+            namespace '$PKG'
+            compileSdk 34
+            defaultConfig {
+              applicationId '$PKG'
+              minSdk 21
+              targetSdk 34
+              versionCode 1
+              versionName '1.0'
+            }
+          }
+          dependencies { implementation 'androidx.appcompat:appcompat:1.6.1' }
+          EOF
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
